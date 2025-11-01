@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { embeddingService } from '@/lib/embedding';
 
 interface Stats {
@@ -16,6 +16,8 @@ export default function DataMonitor() {
   const [category, setCategory] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const componentRef = useRef<HTMLDivElement>(null);
 
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -23,6 +25,9 @@ export default function DataMonitor() {
   };
 
   const fetchStats = async () => {
+    // Only fetch if component is visible
+    if (!isVisible) return;
+
     try {
       const response = await fetch('/api/data');
       const data = await response.json();
@@ -37,11 +42,40 @@ export default function DataMonitor() {
     }
   };
 
+  // Intersection Observer to detect component visibility
   useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      { threshold: 0.1 } // Trigger when 10% of component is visible
+    );
+
+    if (componentRef.current) {
+      observer.observe(componentRef.current);
+    }
+
+    return () => {
+      if (componentRef.current) {
+        observer.unobserve(componentRef.current);
+      }
+    };
   }, []);
+
+  // Fetch stats only when component is visible
+  useEffect(() => {
+    if (!isVisible) return;
+
+    // Initial fetch
+    fetchStats();
+
+    // Set up interval only when visible
+    const interval = setInterval(fetchStats, 10000); // Increased to 10 seconds
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isVisible]); // Only restart interval when visibility changes
 
   const addDocument = async () => {
     if (!newText.trim()) {
@@ -77,6 +111,8 @@ export default function DataMonitor() {
       showMessage('success', 'Document added successfully!');
       setNewText('');
       setCategory('');
+      
+      // Refresh stats after adding document
       fetchStats();
     } catch (error) {
       console.error('Failed to add document:', error);
@@ -109,7 +145,7 @@ export default function DataMonitor() {
 
   if (!stats) {
     return (
-      <div className="w-full max-w-4xl mx-auto p-6 bg-gray-50 rounded-lg">
+      <div ref={componentRef} className="w-full max-w-4xl mx-auto p-6 bg-gray-50 rounded-lg">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-300 rounded w-1/3 mb-6"></div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -123,7 +159,7 @@ export default function DataMonitor() {
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6 bg-gray-50 rounded-lg">
+    <div ref={componentRef} className="w-full max-w-4xl mx-auto p-6 bg-gray-50 rounded-lg">
       <h2 className="text-2xl font-bold mb-6">Data Management & Monitoring</h2>
       
       {/* Message Alert */}
@@ -223,7 +259,13 @@ export default function DataMonitor() {
       {/* Real-time Updates */}
       <div className="text-center">
         <p className="text-sm text-gray-500">
-          ⚡ Auto-updating every 5 seconds • Last update: {new Date().toLocaleTimeString()}
+          {isVisible ? (
+            <>
+              ⚡ Auto-updating every 10 seconds • Last update: {new Date().toLocaleTimeString()}
+            </>
+          ) : (
+            '🔍 Scroll to this section to see live updates'
+          )}
         </p>
       </div>
     </div>

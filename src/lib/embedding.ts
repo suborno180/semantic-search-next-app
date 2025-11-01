@@ -6,21 +6,28 @@ class EmbeddingService {
   private isLoaded = false;
   private backendInitialized = false;
 
+  // Public getter for model status
+  get modelStatus() {
+    return {
+      isLoaded: this.isLoaded,
+      backendInitialized: this.backendInitialized,
+      backend: typeof window !== 'undefined' ? tf.getBackend() : 'server'
+    };
+  }
+
   async initializeBackend() {
     if (this.backendInitialized) return;
     
-    // Set backend to CPU if WebGL is not available
+    // Only initialize in browser environment
+    if (typeof window === 'undefined') {
+      this.backendInitialized = true;
+      return;
+    }
+    
     try {
-      // Check if we're in browser environment
-      if (typeof window !== 'undefined') {
-        // Try to initialize WebGL backend
-        await tf.setBackend('webgl');
-        console.log('WebGL backend initialized');
-      } else {
-        // Server environment - use CPU
-        await tf.setBackend('cpu');
-        console.log('CPU backend initialized');
-      }
+      // Try WebGL first for better performance
+      await tf.setBackend('webgl');
+      console.log('WebGL backend initialized');
       this.backendInitialized = true;
     } catch (error) {
       console.warn('WebGL backend failed, falling back to CPU:', error);
@@ -41,34 +48,25 @@ class EmbeddingService {
     console.log('Loading Universal Sentence Encoder...');
     
     try {
-      // Initialize backend first
       await this.initializeBackend();
       
-      // Load the model
-      this.model = await use.load({
-        modelUrl: '/models/universal-sentence-encoder/model.json'
-      });
-      
-      this.isLoaded = true;
-      console.log('Model loaded successfully');
-    } catch (error) {
-      console.error('Failed to load model:', error);
-      
-      // Try alternative loading method
-      try {
-        console.log('Trying alternative model loading...');
+      // Only load model in browser environment
+      if (typeof window !== 'undefined') {
         this.model = await use.load();
         this.isLoaded = true;
-        console.log('Model loaded successfully via alternative method');
-      } catch (fallbackError) {
-        console.error('Alternative loading also failed:', fallbackError);
-        throw new Error(`Model loading failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
+        console.log('Model loaded successfully');
+      } else {
+        console.log('Skipping model load on server side');
+        this.isLoaded = true; // Mark as loaded to prevent repeated attempts
       }
+    } catch (error) {
+      console.error('Failed to load model:', error);
+      throw error;
     }
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    // Check if we're in browser environment
+    // Only generate embeddings in browser environment
     if (typeof window === 'undefined') {
       throw new Error('Embedding can only be generated in browser environment');
     }
@@ -109,15 +107,6 @@ class EmbeddingService {
     const similarity = dotProduct / (magnitudeA * magnitudeB);
     // Ensure similarity is between -1 and 1
     return Math.max(-1, Math.min(1, similarity));
-  }
-
-  // Get model status
-  getModelStatus() {
-    return {
-      isLoaded: this.isLoaded,
-      backendInitialized: this.backendInitialized,
-      backend: tf.getBackend()
-    };
   }
 }
 
